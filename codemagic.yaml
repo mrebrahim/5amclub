@@ -1,0 +1,64 @@
+# Codemagic CI for the 5 AM Android app.
+# Docs: https://docs.codemagic.io/yaml-quick-start/building-a-native-android-app/
+workflows:
+  android-debug:
+    name: Android debug APK
+    instance_type: linux_x2
+    max_build_duration: 60
+    environment:
+      java: 17
+    triggering:
+      events:
+        - push
+        - pull_request
+      branch_patterns:
+        - pattern: "*"
+          include: true
+      cancel_previous_builds: true
+    cache:
+      cache_paths:
+        - $HOME/.gradle/caches
+        - $HOME/.gradle/wrapper
+    scripts:
+      - name: Point Gradle at the Android SDK
+        script: echo "sdk.dir=$ANDROID_SDK_ROOT" > "$CM_BUILD_DIR/local.properties"
+      - name: Unit tests
+        script: ./gradlew testDebugUnitTest --no-daemon
+        test_report: app/build/test-results/testDebugUnitTest/*.xml
+      - name: Build debug APK
+        script: ./gradlew assembleDebug --no-daemon
+    artifacts:
+      - app/build/outputs/apk/**/*.apk
+      - app/build/reports/tests/**
+      - app/schemas/**
+
+  android-release:
+    name: Android release (APK + AAB)
+    instance_type: linux_x2
+    max_build_duration: 60
+    environment:
+      java: 17
+      # Upload a keystore in Codemagic (Team settings > Code signing identities > Android keystores)
+      # with this reference name. Codemagic then exports CM_KEYSTORE_PATH, CM_KEYSTORE_PASSWORD,
+      # CM_KEY_ALIAS and CM_KEY_PASSWORD, which app/build.gradle.kts picks up.
+      # Without it, the release build is signed with the debug key (installable, not Play-ready).
+      android_signing:
+        - fiveam_keystore
+    triggering:
+      events:
+        - tag
+      tag_patterns:
+        - pattern: "v*"
+          include: true
+    scripts:
+      - name: Point Gradle at the Android SDK
+        script: echo "sdk.dir=$ANDROID_SDK_ROOT" > "$CM_BUILD_DIR/local.properties"
+      - name: Unit tests
+        script: ./gradlew testReleaseUnitTest --no-daemon
+        test_report: app/build/test-results/testReleaseUnitTest/*.xml
+      - name: Build release APK and bundle
+        script: ./gradlew assembleRelease bundleRelease --no-daemon
+    artifacts:
+      - app/build/outputs/apk/release/*.apk
+      - app/build/outputs/bundle/release/*.aab
+      - app/build/outputs/mapping/release/mapping.txt
